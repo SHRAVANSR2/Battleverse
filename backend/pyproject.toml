@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "battleverse-backend"
+version = "0.1.0"
+description = "BattleVerse FastAPI backend"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.161.1",
+    "uvicorn[standard]==0.54.0",
+    "sqlalchemy==2.1.6",
+    "alembic==1.20.1",
+    "pydantic==2.14.1",
+    "pydantic-settings==2.16.1",
+    "python-dotenv>=1.0.1",
+]
+
+[project.optional-dependencies]
+groq = ["groq==1.7.0"]
+tts = ["piper-tts==1.8.0"]
+dev = [
+    "pytest==9.1.1",
+    "httpx==0.28.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+# Default run is offline: no Piper models, no Groq network calls.
+addopts = "-m 'not piper and not live'"
+markers = [
+    "live: calls the real Groq API (needs GROQ_API_KEY and -m live)",
+    "piper: exercises the real Piper engine (needs voice models downloaded)",
+]
+filterwarnings = [
+    "error::DeprecationWarning:app.*",
+]

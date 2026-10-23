@@ -1,0 +1,1 @@
+"""Provider adapters: LLM (Groq/Demo) and TTS (Piper/Fake)."""

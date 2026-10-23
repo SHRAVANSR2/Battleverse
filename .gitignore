@@ -1,0 +1,52 @@
+# --- secrets ---
+.env
+.env.*
+!.env.example
+Groq.txt
+*.key
+secrets*
+*.pem
+
+# --- python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- backend runtime data ---
+backend/storage/battleverse.db
+backend/storage/*.db
+backend/storage/*.db-wal
+backend/storage/*.db-shm
+backend/storage/audio/**
+!backend/storage/audio/.gitkeep
+backend/storage/models/**
+!backend/storage/models/.gitkeep
+backend/storage/avatars/**
+!backend/storage/avatars/.gitkeep
+
+# --- node ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/playwright-report/
+frontend/test-results/
+frontend/e2e/screenshots/
+frontend/e2e-artifacts/
+
+# --- tooling-local state ---
+# Claude Code's per-machine settings (permission grants and similar local
+# state). Never commit: it can capture local paths and approval rules.
+.claude/settings.local.json
+
+# --- misc ---
+.DS_Store
+Thumbs.db
+*.log
