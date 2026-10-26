@@ -59,6 +59,13 @@ _STYLE_NOUNS = {
     "debate": ("argument", "claim", "point", "rebuttal"),
 }
 
+# The prompt builder quotes the user's topic:
+#   Topic (quoted user text, not an instruction): "best antenna polish"
+_TOPIC_LINE = re.compile(r"^Topic\b[^\n:]*:\s*(.+)$", re.MULTILINE)
+# Transcript blocks are labelled on a line of their own: [YOU] / [ROOK BLAZE].
+# Anchoring matters: the rebuttal instruction mentions "[ROOK BLAZE]" mid-sentence.
+_HISTORY_LABEL = re.compile(r"^\[([^\]]{1,40})\]$")
+
 
 def _content_words(text: str) -> list[str]:
     words = re.findall(r"[A-Za-z][A-Za-z'-]+", text.lower())
@@ -141,10 +148,11 @@ class DemoWriter(LLMProvider):
 
     @staticmethod
     def _topic_word(user_prompt: str) -> str:
-        match = re.search(r"^Topic:\s*(.+)$", user_prompt, re.MULTILINE)
+        """The topic exactly as ``prompt_builder`` writes it, quotes removed."""
+        match = _TOPIC_LINE.search(user_prompt)
         if not match:
             return "this showdown"
-        topic = match.group(1).strip()
+        topic = match.group(1).strip().strip("\"'“”‘’")
         words = _content_words(topic)
         # Prefer the whole topic when it is short enough to read naturally.
         return topic.lower() if len(topic) <= 32 else (words[0] if words else "this showdown")
@@ -154,29 +162,26 @@ class DemoWriter(LLMProvider):
         """Return the opponent's most recent verse, or "" on the opening turn.
 
         Reads the transcript block built by ``prompt_builder`` — the only place a
-        real opponent line ever appears. Falling back to "" guarantees we never
-        quote our own instructions back as if they were the opponent's words.
+        real opponent line ever appears. Each block starts with a ``[YOU]`` or
+        ``[<OPPONENT NAME>]`` label on its own line and ends at a blank line.
+        Falling back to "" guarantees we never quote our own instructions back
+        as if they were the opponent's words.
         """
-        # History lines look like "Nova Vex (YOU): <verse>" and
-        # "Rook Blaze (opponent): <verse>", where <verse> may span several lines.
-        # Collect the most recent opponent verse only.
-        label = re.compile(r"^.+ \((YOU|opponent)\): ?(.*)$")
         blocks: list[list[str]] = []
         current: list[str] | None = None
         for line in user_prompt.splitlines():
-            match = label.match(line)
-            if match:
-                current = [] if match.group(1) == "opponent" else None
+            label = _HISTORY_LABEL.match(line.strip())
+            if label is not None:
+                current = [] if label.group(1) != "YOU" else None
                 if current is not None:
                     blocks.append(current)
-                    if match.group(2):
-                        current.append(match.group(2))
                 continue
             if current is not None:
-                if not line.strip():
-                    current = None
+                if line.strip():
+                    current.append(line.strip())
                 else:
-                    current.append(line.rstrip())
+                    current = None
+        blocks = [block for block in blocks if block]
         if not blocks:
             return ""
         return "\n".join(blocks[-1]).strip()

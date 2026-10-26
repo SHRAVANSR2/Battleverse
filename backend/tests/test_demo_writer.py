@@ -6,53 +6,77 @@ respond to the opponent's previous verse so a demo battle reads like an exchange
 
 from __future__ import annotations
 
+from types import SimpleNamespace as NS
+
 import pytest
 
 from app.providers.llm.base import VerseRequest
 from app.providers.llm.demo_writer import DemoWriter
+from app.seeds.characters import BUILTIN_CHARACTERS
+from app.services.prompt_builder import build_prompt
 
+TOPIC = "best antenna polish"
 OPPONENT_VERSE = (
-    "Buckle up, bolts-for-brains: the topic is \"best antenna polish\", and I came to rhyme,\n"
-    "My punchline on \"best antenna polish\" is mean, serene, and clean,\n"
-    "Your punchline is clean. Mine is mean, every time,\n"
-    "Round 1 goes to me. Keep up, Rook Blaze."
-)
-
-USER_PROMPT = "\n\n".join(
-    [
-        'Topic: best antenna polish',
-        "Round 1 of 3. This is your turn (turn 2).",
-        "Recent battle transcript (oldest first):\n"
-        f"Nova Vex (opponent): {OPPONENT_VERSE}",
-        "Write your next rap battle punchlines verse about the topic, aimed at Nova Vex. "
-        "4 lines maximum.",
-    ]
-)
-
-OPENING_PROMPT = "\n\n".join(
-    [
-        "Topic: best antenna polish",
-        "Round 1 of 3. This is your turn (turn 1).",
-        "Write your next rap battle punchlines verse about the topic, aimed at Rook Blaze. "
-        "4 lines maximum.",
-    ]
+    "Your antenna looks like a bent paperclip\n"
+    "Your signal drops in a light breeze"
 )
 
 
-def _request(user_prompt: str, turn: int = 2) -> VerseRequest:
-    return VerseRequest(
-        system_prompt="ignored by the demo writer",
-        user_prompt=user_prompt,
-        character_name="Rook Blaze" if turn % 2 == 0 else "Nova Vex",
-        opponent_name="Nova Vex" if turn % 2 == 0 else "Rook Blaze",
-        turn_number=turn,
-        metadata={"style": "rap"},
+def _character(index: int) -> NS:
+    data = BUILTIN_CHARACTERS[index]
+    return NS(
+        id=data["slug"],
+        name=data["name"],
+        tagline=data["tagline"],
+        personality=data["personality"],
+        catchphrase=data["catchphrase"],
     )
+
+
+def _battle() -> NS:
+    return NS(style=NS(value="rap"), intensity=NS(value="spicy"), topic=TOPIC, round_count=2)
+
+
+def _prompt(turn: int) -> tuple[str, str, str, str]:
+    """(system, user, speaker_name, opponent_name) built by the real prompt builder.
+
+    These fixtures deliberately come from ``build_prompt`` rather than hand-written
+    strings: the previous hand-written fixtures kept the old prompt format alive
+    and hid a real bug (the demo writer read a format the app no longer emits).
+    """
+    nova, rook = _character(0), _character(1)
+    speaker, opponent = (rook, nova) if turn % 2 == 0 else (nova, rook)
+    history = (
+        [NS(character_id=nova.id, verse_text=OPPONENT_VERSE, turn_number=1)] if turn > 1 else []
+    )
+    pair = build_prompt(
+        battle=_battle(),
+        speaker=speaker,
+        opponent=opponent,
+        previous_verses=history,
+        turn_number=turn,
+        round_number=(turn - 1) // 2 + 1,
+    )
+    return pair.system_prompt, pair.user_prompt, speaker.name, opponent.name
+
+
+def _request(turn: int = 2, **overrides) -> VerseRequest:
+    system, user, speaker, opponent = _prompt(turn)
+    kwargs = {
+        "system_prompt": system,
+        "user_prompt": user,
+        "character_name": speaker,
+        "opponent_name": opponent,
+        "turn_number": turn,
+        "metadata": {"style": "rap"},
+    }
+    kwargs.update(overrides)
+    return VerseRequest(**kwargs)
 
 
 @pytest.mark.asyncio
 async def test_identifies_itself_as_scripted():
-    completion = await DemoWriter().generate_verse(_request(USER_PROMPT))
+    completion = await DemoWriter().generate_verse(_request(2))
     assert completion.provider == "demo"
     assert completion.model == "scripted-demo-writer"
     assert completion.prompt_tokens == 0
@@ -60,16 +84,26 @@ async def test_identifies_itself_as_scripted():
 
 @pytest.mark.asyncio
 async def test_quotes_the_opponents_actual_line():
-    completion = await DemoWriter().generate_verse(_request(USER_PROMPT))
-    assert "punchline" in completion.text.lower()
+    completion = await DemoWriter().generate_verse(_request(2))
+    assert "bent paperclip" in completion.text.lower()
     # It must never quote words from its own instructions as the opponent's.
-    assert "4 lines maximum" not in completion.text
-    assert "Write your next" not in completion.text
+    assert "ALREADY USED" not in completion.text
+    assert "REBUTTAL" not in completion.text
+
+
+@pytest.mark.asyncio
+async def test_uses_the_real_topic_from_the_prompt():
+    """Regression: the demo writer used to read an older prompt format and
+    fall back to the literal placeholder "this showdown" for every verse."""
+    for turn in (1, 2):
+        completion = await DemoWriter().generate_verse(_request(turn))
+        assert TOPIC in completion.text.lower()
+        assert "this showdown" not in completion.text.lower()
 
 
 @pytest.mark.asyncio
 async def test_callbacks_do_not_nest_quotes():
-    completion = await DemoWriter().generate_verse(_request(USER_PROMPT))
+    completion = await DemoWriter().generate_verse(_request(2))
     # The topic is legitimately quoted twice; what must never appear is a
     # reminder-of-a-reminder like "You said "You said ..."".
     assert '""' not in completion.text
@@ -79,25 +113,15 @@ async def test_callbacks_do_not_nest_quotes():
 
 @pytest.mark.asyncio
 async def test_opening_turn_does_not_invent_an_opponent_line():
-    completion = await DemoWriter().generate_verse(_request(OPENING_PROMPT, turn=1))
+    completion = await DemoWriter().generate_verse(_request(1))
     lowered = completion.text.lower()
     assert "you said" not in lowered
     assert "cute" not in lowered
-    assert "best antenna polish" in lowered
 
 
 @pytest.mark.asyncio
 async def test_respects_the_line_limit():
-    request = VerseRequest(
-        system_prompt="",
-        user_prompt=USER_PROMPT,
-        character_name="Rook Blaze",
-        opponent_name="Nova Vex",
-        turn_number=2,
-        max_lines=2,
-        metadata={"style": "rap"},
-    )
-    completion = await DemoWriter().generate_verse(request)
+    completion = await DemoWriter().generate_verse(_request(2, max_lines=2))
     assert len(completion.text.splitlines()) == 2
 
 
@@ -107,14 +131,14 @@ async def test_the_two_robot_voices_differ():
     assert roster[0] is True
     assert "not AI-generated" in roster[1]
 
-    rook = await DemoWriter().generate_verse(_request(USER_PROMPT, turn=2))
-    nova = await DemoWriter().generate_verse(_request(USER_PROMPT, turn=3))
+    rook = await DemoWriter().generate_verse(_request(2))
+    nova = await DemoWriter().generate_verse(_request(3))
     assert nova.text != rook.text
 
 
 @pytest.mark.asyncio
 async def test_is_deterministic_for_the_same_input():
     writer = DemoWriter()
-    first = await writer.generate_verse(_request(USER_PROMPT))
-    second = await writer.generate_verse(_request(USER_PROMPT))
+    first = await writer.generate_verse(_request(2))
+    second = await writer.generate_verse(_request(2))
     assert first.text == second.text
