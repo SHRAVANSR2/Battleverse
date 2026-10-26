@@ -106,7 +106,7 @@ cd D:\ClaudeCodeTest
 pytest backend/tests -q
 ```
 
-Expected: **63 passed**, with the real-Piper and live-Groq tests deselected.
+Expected: **69 passed**, with the real-Piper and live-Groq tests deselected.
 
 ### Real speech, no browser involved
 
@@ -130,7 +130,7 @@ Expected: **3 passed**. Skipped automatically if the models are absent.
 
 ```powershell
 cd frontend
-npm run test:run      # 26 passed
+npm run test:run      # 33 passed
 npm run build         # tsc -b && vite build
 ```
 

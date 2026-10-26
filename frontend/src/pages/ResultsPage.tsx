@@ -102,6 +102,8 @@ export function ResultsPage() {
           <p className="text-sm text-[var(--color-muted)]">{winnerCharacter.tagline}</p>
         </div>
       ) : (
+        /* Unreachable today: a battle only reaches "completed" via cast_vote,
+           which always sets a winner. Kept so a future draw rule renders safely. */
         <div className="bv-card px-6 py-8 text-center">
           <p className="text-lg font-bold">Nobody won this one.</p>
           <p className="text-sm text-[var(--color-muted)]">

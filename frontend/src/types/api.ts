@@ -141,16 +141,6 @@ export interface TurnResponse {
   created: boolean;
 }
 
-export interface VoiceInfo {
-  id: string;
-  label: string;
-  available: boolean;
-  characters_using: string[];
-  sample_text: string;
-  language: string;
-  gender?: string | null;
-}
-
 export interface LeaderboardRow {
   character_id: string;
   slug: string;

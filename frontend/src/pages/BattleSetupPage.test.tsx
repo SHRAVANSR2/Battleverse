@@ -23,7 +23,6 @@ vi.mock("../services/system", () => ({
     tts_voices: 2,
     tts_ready: true,
   }),
-  fetchVoices: vi.fn().mockResolvedValue([]),
 }));
 
 import { createBattle, fetchCharacters } from "../services/battles";
