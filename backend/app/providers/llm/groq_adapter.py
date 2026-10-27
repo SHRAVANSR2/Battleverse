@@ -85,7 +85,7 @@ class GroqLLMProvider(LLMProvider):
                     "role": "user",
                     "content": (
                         "That output was unusable. Reply again with ONLY valid JSON of the form "
-                        '{"verse_text": "<2-4 lines separated by \\n>", "line_count": <int>, '
+                        '{"verse_text": "<2-4 lines of 7-12 words, separated by \\n>", "line_count": <int>, '
                         '"callback_reference": "<short phrase>"} and no other text.'
                     ),
                 },
@@ -113,6 +113,9 @@ class GroqLLMProvider(LLMProvider):
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
                 response_format={"type": "json_object"},
+                # gpt-oss is a reasoning model: keep thinking short so the
+                # token budget goes to the verse and replies come back fast.
+                extra_body={"reasoning_effort": "low"},
             )
         except Exception as exc:  # mapped to AppError subclasses below
             raise map_groq_exception(exc) from None

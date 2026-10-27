@@ -18,7 +18,7 @@ describe("SpeechBubble", () => {
     expect(screen.getByText("demo")).toBeInTheDocument();
   });
 
-  it("omits the demo tag for real Groq verses", () => {
+  it("labels real Groq verses with their provider", () => {
     render(
       <SpeechBubble
         {...baseProps}
@@ -26,6 +26,17 @@ describe("SpeechBubble", () => {
       />,
     );
     expect(screen.queryByText("demo")).not.toBeInTheDocument();
+    expect(screen.getByText("groq")).toBeInTheDocument();
+  });
+
+  it("labels Gemini verses with their provider", () => {
+    render(
+      <SpeechBubble
+        {...baseProps}
+        verse={makeVerse({ is_demo: false, provider: "gemini" })}
+      />,
+    );
+    expect(screen.getByText("gemini")).toBeInTheDocument();
   });
 
   it("shows a text Speaking label (not colour alone) and calls onPlay", async () => {

@@ -4,6 +4,8 @@ Only voices with permissive dataset licences are used:
 
 * ``en_US-kristin-medium`` — LibriVox (public domain), female
 * ``en_US-joe-medium``     — CC0, male
+* ``en_GB-alan-medium``    — LibriVox (public domain), British male
+* ``en_US-amy-medium``     — CC0, female
 
 Model files are downloaded by the user (see docs/TTS.md); they are never
 committed. Unknown voice ids are rejected before touching the filesystem.
@@ -27,6 +29,20 @@ PIPER_VOICES: tuple[Voice, ...] = (
         filename="en_US-joe-medium.onnx",
         language="en-US",
         gender="male",
+    ),
+    Voice(
+        id="en_GB-alan-medium",
+        label="Alan (posh, British male)",
+        filename="en_GB-alan-medium.onnx",
+        language="en-GB",
+        gender="male",
+    ),
+    Voice(
+        id="en_US-amy-medium",
+        label="Amy (bright, female)",
+        filename="en_US-amy-medium.onnx",
+        language="en-US",
+        gender="female",
     ),
 )
 

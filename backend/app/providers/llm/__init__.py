@@ -1,4 +1,10 @@
 from .base import LLMProvider, VerseRequest
-from .registry import build_llm_provider
+from .registry import LLMProviderPair, build_llm_provider, build_llm_providers
 
-__all__ = ["LLMProvider", "VerseRequest", "build_llm_provider"]
+__all__ = [
+    "LLMProvider",
+    "LLMProviderPair",
+    "VerseRequest",
+    "build_llm_provider",
+    "build_llm_providers",
+]

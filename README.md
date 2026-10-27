@@ -1,28 +1,30 @@
 # BattleVerse
 
-Two cartoon robots, **Nova Vex** and **Rook Blaze**, trade rap, roast, or debate
-verses about a topic you pick. Every line is written by an LLM (Groq) and then
-**spoken aloud in two genuinely different real voices** generated locally by
-Piper. You vote for a winner, and battles are saved with history, a leaderboard,
-rematch links, and a small rivalry memory that the robots carry into the next
-fight.
+Four cartoon robots — **Nova Vex**, **Rook Blaze**, **Baron Byte**, and
+**Gizmo Jinx** — trade rap, roast, or debate verses about a topic you pick.
+Pick any two to fight: **fighter A always writes with Groq, fighter B always
+writes with Gemini**. Every line is spoken aloud by Piper in the fighter's
+own voice, and rap battles sit on top of a procedurally generated boom-bap
+beat. You vote for a winner, and battles are saved with history, a
+leaderboard, rematch links, and a small rivalry memory the robots carry into
+the next fight.
 
 - **Backend:** Python 3.11 · FastAPI · SQLAlchemy · SQLite · Alembic
 - **Frontend:** React 19 · TypeScript · Vite · Tailwind CSS 4
-- **LLM:** [Groq](https://console.groq.com) (`openai/gpt-oss-120b`) — free tier
+- **LLMs:** [Groq](https://console.groq.com) (`openai/gpt-oss-120b`) for fighter A and [Gemini](https://ai.google.dev/gemini-api) (`gemini-3.8-flash`, falling back to `gemini-3.1-flash-lite`) for fighter B
 - **TTS:** [Piper](https://github.com/OHF-Voice/piper1-gpl) — local, offline, CPU
+- **Music:** none recorded — the beat is synthesised live with the Web Audio API
 
-> **Demo Mode.** With no `GROQ_API_KEY`, BattleVerse still runs, but a clearly
-> labelled scripted writer produces the verses. Every such verse is tagged
-> `demo` in the UI and `provider=demo` in the database. Scripted output is
-> **never** presented as AI-generated.
+Both `GROQ_API_KEY` and `GEMINI_API_KEY` are required for battles. Each verse
+is tagged with its actual provider. If a key is missing, that fighter's turn
+fails with a setup message; the app does not substitute scripted verses.
 
 ---
 
 ## Quick start (Windows PowerShell)
 
-Prerequisites: **Python 3.11+**, **Node 20+**, and ~130 MB of disk for the voice
-models. `ffprobe` is optional (used only by the audio smoke test).
+Prerequisites: **Python 3.11+**, **Node 20+**, and ~250 MB of disk for the
+four voice models. `ffprobe` is optional (used only by the audio smoke test).
 
 ### 1. Clone and create the environment
 
@@ -39,27 +41,37 @@ If PowerShell blocks the activation script:
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ```
 
-### 2. Install the backend (with Groq and Piper)
+### 2. Install the backend (with Groq, Gemini, and Piper)
 
 ```powershell
-pip install -e "backend[dev,groq,tts]"
+pip install -e "backend[dev,groq,gemini,tts]"
 ```
 
-### 3. Download the two voices (one time, ~122 MB)
+### 3. Download the four voices (one time, ~250 MB)
+
+Each robot has its own Piper voice:
+
+| Robot        | Voice model             |
+|---|---|
+| Nova Vex     | `en_US-kristin-medium`  |
+| Rook Blaze   | `en_US-joe-medium`      |
+| Baron Byte   | `en_GB-alan-medium`     |
+| Gizmo Jinx   | `en_US-amy-medium`      |
 
 ```powershell
-python -m piper.download_voices en_US-joe-medium en_US-kristin-medium --download-dir backend\storage\models
+python -m piper.download_voices en_US-kristin-medium en_US-joe-medium en_GB-alan-medium en_US-amy-medium --download-dir backend\storage\models
 ```
 
 ### 4. Configure
 
 ```powershell
 Copy-Item .env.example .env
-notepad .env      # paste your GROQ_API_KEY, save, close
+notepad .env      # add GROQ_API_KEY and GEMINI_API_KEY, save, close
 ```
 
-Get a free key at <https://console.groq.com/keys>. Leave `GROQ_API_KEY` empty to
-use the labelled Demo Mode. `.env` is gitignored and never sent to the browser.
+Get keys at <https://console.groq.com/keys> and
+<https://aistudio.google.com/apikey>. `.env` is gitignored and never sent to
+the browser. Never share API keys in chat or commit them.
 
 ### 5. Create and seed the database
 
@@ -106,7 +118,7 @@ cd D:\ClaudeCodeTest
 pytest backend/tests -q
 ```
 
-Expected: **69 passed**, with the real-Piper and live-Groq tests deselected.
+Expected: **110 passed**, with the real-Piper and live-LLM tests deselected.
 
 ### Real speech, no browser involved
 
@@ -130,7 +142,7 @@ Expected: **3 passed**. Skipped automatically if the models are absent.
 
 ```powershell
 cd frontend
-npm run test:run      # 33 passed
+npm run test:run      # 44 passed
 npm run build         # tsc -b && vite build
 ```
 
@@ -169,7 +181,7 @@ cd D:\ClaudeCodeTest\backend
 ```
 
 Makes one real API call with the production adapter and prompt, then prints the
-model, token counts, and the parsed verse. It refuses to run in Demo Mode.
+model, token counts, and the parsed verse.
 
 ---
 
@@ -177,17 +189,20 @@ model, token counts, and the parsed verse. It refuses to run in Demo Mode.
 
 ### Battle flow
 
-1. `POST /api/battles` creates a battle (`created`).
+1. `POST /api/battles` creates a battle from two character IDs, a topic, and
+   a style (`rap`, `roast`, or `debate`); state is `created`.
 2. `POST /api/battles/{id}/turn` generates the next verse. The backend decides
    who speaks: **A on odd turns, B on even**, so round `r` is turns `2r-1` and
    `2r`. It flips to `in_progress` on the first turn and to `awaiting_vote`
    after the last.
 3. The next verse's prompt includes the topic, both personas, the last three
-   verses (so the reply is contextual), and up to two rivalry memories.
-4. `POST /api/battles/{id}/vote` records one vote per browser and completes the
-   battle.
+   verses (so the reply is contextual), a "spent ammo" list banning overused
+   words, and up to two rivalry memories.
+4. `POST /api/battles/{id}/vote` records one vote per browser and completes
+   the battle.
 5. `POST /api/battles/{id}/rematch` creates a linked follow-up battle; the
-   rivalry summary is injected into the new prompts.
+   rivalry summary ("Last time Nova Vex won") is injected into the new
+   prompts.
 
 ### Duplicate turns are prevented four ways
 
@@ -216,20 +231,34 @@ database transaction** → WAV validation → atomic write to
 - Filenames are opaque and content-addressed, so responses are served with
   `Cache-Control: immutable`.
 
+For **rap** style, the verse text is re-punctuated before synthesis
+(`services/speech_text.py`): commas after bars 1 and 3, full stops after bars
+2 and 4, so Piper breathes bar-by-bar instead of reading the verse as one
+breathless sentence. Other styles are spoken exactly as written.
+
 Details, engine comparison, and caveats: [docs/TTS.md](docs/TTS.md).
 
-### Demo Mode honesty
+### The beat
+
+Rap battles play over a small procedural boom-bap loop generated entirely in
+the browser (`frontend/src/audio/beat.ts` — no audio files). One 16-step Web
+Audio scheduler, three profiles:
+
+- **rap** — 90 BPM: kick 0/6/10, snare 4/12, swung 8th hats, 808
+  A-A-F-G, Am stab on bars 1 and 3
+- **roast** — 72 BPM: kick 0/8, snare 4/12, no hats, no stabs (lazier, meaner)
+- **debate** — 60 BPM: kick 0, soft "gavel" thump on 8, sparse hat on 4/12
+  (a ticking-clock feel)
+
+The beat loops for the whole battle and starts on the first verse.
+
+### Provider tagging
 
 | Surface | What it shows |
 |---|---|
-| `/api/health` | `llm_provider: "demo"`, `demo_mode: true` |
-| Nav bar | Persistent **Demo Mode** chip |
-| Every verse | A `demo` tag next to the author |
-| Database | `verses.provider = 'demo'` |
-| Result page | "demo line (scripted, not AI-generated)" |
-
-Tests assert the tag appears for `provider="demo"` and is absent for
-`provider="groq"`.
+| `/api/health` | Provider assignments and whether each key is configured |
+| Every verse | `Groq` or `Gemini` tag next to the author |
+| Database | `verses.provider` records the actual provider |
 
 ---
 
@@ -240,8 +269,11 @@ All settings live in `.env` (see `.env.example`). Relative paths resolve from
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `GROQ_API_KEY` | *(empty)* | Empty → Demo Mode. Present → Groq generates verses. |
+| `GROQ_API_KEY` | *(empty)* | Required for fighter A (Groq). |
 | `LLM_MODEL` | `openai/gpt-oss-120b` | Groq model ID. Alternative: `openai/gpt-oss-20b`. |
+| `GEMINI_API_KEY` | *(empty)* | Required for fighter B (Gemini). |
+| `GEMINI_MODEL` | `gemini-3.8-flash` | Primary Gemini model for fighter B. |
+| `GEMINI_FALLBACK_MODEL` | `gemini-3.1-flash-lite` | Used if the primary model is unavailable. |
 | `LLM_TIMEOUT_SECONDS` | `45` | Per-request timeout |
 | `LLM_MAX_RETRIES` | `1` | App-level retries (clamped to ≤1; the SDK's own retries are off) |
 | `LLM_TEMPERATURE` | `0.9` | Sampling temperature |
@@ -262,10 +294,10 @@ Per Groq's published limits for the `gpt-oss` models on the free tier: roughly
 battle is six requests with a small prompt, so it fits comfortably; starting
 several battles at once will not. These are Groq's numbers and may change.
 
-When a limit is hit the API returns `LLM_RATE_LIMITED` (429) and the UI explains
-it in plain language rather than retrying in a storm. **No paid billing is
-configured or enabled by this app.** If a model ID is retired, the API returns
-`LLM_MODEL_UNAVAILABLE` telling you to update `LLM_MODEL`.
+When a limit is hit the API returns `LLM_RATE_LIMITED` (429) and the UI
+explains it in plain language rather than retrying in a storm. **No paid
+billing is configured or enabled by this app.** If a model ID is retired, the
+API returns `LLM_MODEL_UNAVAILABLE` telling you to update `LLM_MODEL`.
 
 ---
 
@@ -275,8 +307,9 @@ Errors always return `{"error": {"code", "message", "request_id"}}`.
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/api/health` | Status, provider, demo flag, TTS readiness — never the key |
-| `GET` | `/api/characters` | The two built-in robots |
+| `GET` | `/api/health` | Status, provider, TTS readiness — never the key |
+| `GET` | `/api/characters` | The four built-in robots |
+| `GET` | `/api/characters/{id}` | One robot by ID |
 | `POST` | `/api/battles` | Create a battle |
 | `GET` | `/api/battles` | List battles (`?status=&limit=`) |
 | `GET` | `/api/battles/{id}` | Detail with verses, audio, and result |
@@ -311,22 +344,27 @@ D:\ClaudeCodeTest\
       schemas\     pydantic wire types
       api\         routes: health, characters, battles, audio, tts
       services\    battle_engine, prompt_builder, verse_validator,
-                   audio_service, audio_storage, battle_queries
-      providers\llm\   base, demo_writer, groq_adapter, registry, errors
+                   audio_service, audio_storage, battle_queries,
+                   speech_text, memory
+      providers\llm\   base, groq_adapter, gemini_adapter, demo_writer,
+                       registry, errors
       providers\tts\   base, voices, fake, piper_adapter, registry
       scripts\     tts_smoke, groq_smoke, live_check
       seeds\       characters
     storage\      gitignored: battleverse.db, models\, audio\
-    tests\        conftest, units, flow, engine edges, groq adapter,
-                  tts resilience, demo writer, real\ (piper, opt-in)
+    tests\        conftest, units, flow, engine edges, gemini adapter,
+                  llm registry, roster and style, verse quality rules,
+                  tts resilience, real\ (piper, opt-in)
   frontend\
     playwright.config.ts  e2e\arena.spec.ts
     src\
       pages\        Home, BattleSetup, BattleArena, Results, History,
                     Leaderboard, NotFound
-      components\   layout, ui, battle, audio, character (inline SVG robots)
-      audio\        AudioProvider, audioMachine (pure reducer)
-      hooks\        useBattle, useHealth, useVoterKey, useDocumentTitle
+      components\   layout, ui, battle (SpeechBubble, BattleStage,
+                    VotingPanel), audio, character (inline SVG robots)
+      audio\        AudioProvider, audioMachine (pure reducer), beat
+      hooks\        useBattle, useHealth, useVoterKey, useDocumentTitle,
+                    useRapBeat
       services\     client, battles, audio, system
       test\         setup, fixtures
 ```
@@ -344,10 +382,11 @@ D:\ClaudeCodeTest\
 lines are much faster; the audio is cached per verse afterwards.
 
 **`LLM_AUTH_FAILED`** — the key in `.env` is wrong or revoked. The app does not
-silently fall back to Demo Mode; fix or remove the key.
+silently fall back to anything else; fix or remove the key.
 
-**No sound in the browser** — click **Play** once. Browsers block autoplay until
-a gesture; the app shows a banner and retries after your tap.
+**No sound in the browser** — click **Play** once. Browsers block autoplay
+until a gesture; the app shows a banner and retries after your tap. The beat
+starts with the first verse for the same reason.
 
 **`npm install` peer conflicts** — this repo pins exact versions and ships a
 `package-lock.json`. Use `npm ci` rather than mixing versions.
@@ -356,13 +395,11 @@ a gesture; the app shows a banner and retries after your tap.
 
 ## Known limitations
 
-- **Live Groq generation could not be verified in this build environment**
-  because no API key was available. Everything else in the Groq path is covered
-  by tests with a stubbed SDK client. To verify for real, put a key in `.env`
-  and run `python -m app.scripts.groq_smoke`.
 - One uvicorn worker only. Scaling beyond a single process would need a shared
   lock (the per-battle lock is in-process); the CAS and unique index still hold.
 - Overall vote only — no per-round scoring, and no AI judge (by design).
-- English (`en_US`) voices only.
-- Voting uses per-browser local storage keys, which is adequate for a local game
-  but not a defence against determined ballot stuffing.
+- English (`en_US`/`en_GB`) voices only.
+- Voting uses per-browser local storage keys, which is adequate for a local
+  game but not a defence against determined ballot stuffing.
+- The beat is a fixed loop per style — it does not respond to the verse
+  content (by design, to keep the frontend free of audio assets).

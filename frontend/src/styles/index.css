@@ -36,7 +36,10 @@
 
   body {
     margin: 0;
-    background-color: var(--color-bg);
+    background:
+      radial-gradient(52rem 26rem at 88% -8%, #ece6ff 0%, transparent 60%),
+      radial-gradient(46rem 24rem at -8% 2%, #d6faf2 0%, transparent 58%),
+      var(--color-bg);
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 16px;
@@ -134,5 +137,426 @@
       box-shadow 180ms ease,
       background-color 180ms ease,
       border-color 180ms ease;
+  }
+}
+
+
+/* ==================================================================
+   ARENA — dark stage, animated robots, chronological ring.
+================================================================== */
+
+/* ---- stage ------------------------------------------------------ */
+.bv-stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background:
+    linear-gradient(180deg, rgb(10 8 24 / 0) 55%, rgb(124 92 255 / 0.18) 100%),
+    radial-gradient(60% 90% at 50% 0%, #2a2160 0%, #14102e 60%, #0b0919 100%);
+  box-shadow: 0 18px 50px rgb(40 24 120 / 0.35), inset 0 0 0 1px rgb(255 255 255 / 0.04);
+  color: #fff;
+}
+
+.bv-stage::after {
+  /* perspective floor grid */
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 38%;
+  background-image:
+    linear-gradient(rgb(167 139 250 / 0.22) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(167 139 250 / 0.22) 1px, transparent 1px);
+  background-size: 36px 22px;
+  transform: perspective(220px) rotateX(58deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(to top, #000 10%, transparent 95%);
+  pointer-events: none;
+}
+
+.bv-stage-lights {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(34% 70% at 18% 8%, rgb(20 184 166 / 0.45), transparent 70%),
+    radial-gradient(34% 70% at 82% 8%, rgb(244 63 94 / 0.42), transparent 70%);
+  animation: bv-lights 5s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+.bv-neon-sign {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  border: 1.5px solid #c4b5fd;
+  color: #ede9fe;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-shadow: 0 0 8px #a78bfa;
+  box-shadow: 0 0 14px rgb(167 139 250 / 0.55), inset 0 0 10px rgb(167 139 250 / 0.25);
+}
+
+.bv-pip {
+  min-width: 2rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+  border: 1.5px solid rgb(255 255 255 / 0.25);
+  color: rgb(255 255 255 / 0.55);
+}
+.bv-pip-done {
+  background: rgb(255 255 255 / 0.16);
+  color: #fff;
+}
+.bv-pip-now {
+  background: #fbbf24;
+  border-color: #fbbf24;
+  color: #1f2430;
+  box-shadow: 0 0 12px rgb(251 191 36 / 0.7);
+}
+
+.bv-vs {
+  align-self: center;
+  padding-bottom: 3.5rem;
+  font-size: clamp(1.8rem, 6vw, 3.2rem);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #5eead4, #fbbf24 50%, #fb7185);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 14px rgb(251 191 36 / 0.45));
+  animation: bv-vs 1.8s ease-in-out infinite;
+}
+
+/* Slam-in "Round N" banner — sits over the stage, never blocks clicks. */
+.bv-round-slam {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.bv-round-slam span {
+  animation: bv-round-slam 1.4s cubic-bezier(0.2, 1.2, 0.3, 1) both;
+  font-size: clamp(2rem, 7vw, 3.6rem);
+  font-weight: 900;
+  font-style: italic;
+  letter-spacing: -0.03em;
+  text-transform: uppercase;
+  padding: 0.35rem 1.4rem;
+  border-radius: 1rem;
+  background: rgb(15 23 42 / 0.72);
+  border: 2px solid rgb(233 213 255 / 0.5);
+  color: #fdf4ff;
+  text-shadow: 0 0 18px rgb(232 121 249 / 0.8);
+  box-shadow: 0 0 34px rgb(232 121 249 / 0.35);
+}
+
+.bv-fighter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+
+.bv-fighter-robot {
+  position: relative;
+  padding-bottom: 0.4rem;
+}
+
+.bv-spot {
+  /* floor glow under the robot */
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 72%;
+  height: 16px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(closest-side, var(--accent), transparent 75%);
+  opacity: 0.45;
+  transition: opacity 250ms, width 250ms;
+}
+.bv-fighter-active .bv-spot {
+  opacity: 1;
+  width: 100%;
+}
+
+.bv-flip {
+  transform: scaleX(-1);
+}
+
+.bv-nameplate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.35rem 0.9rem;
+  border-radius: 0.9rem;
+  background: rgb(10 8 24 / 0.6);
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow 250ms;
+  text-align: center;
+}
+.bv-fighter-active .bv-nameplate {
+  box-shadow: 0 0 18px var(--accent);
+}
+.bv-nameplate-name {
+  font-weight: 900;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  color: var(--accent-soft);
+}
+.bv-nameplate-tag {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  color: rgb(255 255 255 / 0.7);
+}
+
+.bv-stage-caption {
+  margin: 0;
+  padding: 0.55rem 1rem 0.85rem;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  color: #e9d5ff;
+}
+
+/* ---- robot motion ----------------------------------------------- */
+.bv-robot-body,
+.bv-robot-head,
+.bv-robot-arm-mic {
+  transform-box: fill-box;
+  transform-origin: center bottom;
+}
+.bv-robot-arm-mic {
+  transform-box: view-box;
+  transition: transform 260ms cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.bv-robot-speaking .bv-robot-arm-mic {
+  transform: rotate(-150deg);
+}
+.bv-robot-idle .bv-robot-body {
+  animation: bv-bob 3.4s ease-in-out infinite;
+}
+.bv-robot-speaking .bv-robot-body {
+  animation: bv-hype 0.5s ease-in-out infinite alternate;
+}
+/* While talking: a gentle head bounce on a slightly different clock than the
+   body hype, so the two robots never read as one clip copy-pasted. */
+.bv-robot-speaking .bv-robot-head {
+  animation: bv-talk 0.67s ease-in-out infinite;
+}
+.bv-robot-speaking .bv-robot-chest {
+  animation: bv-glow 0.5s ease-in-out infinite;
+}
+.bv-robot-reacting .bv-robot-body {
+  animation: bv-flinch 0.55s ease-out 1 both;
+}
+.bv-robot-thinking .bv-robot-head {
+  animation: bv-ponder 1.6s ease-in-out infinite;
+}
+.bv-robot-antenna {
+  animation: bv-glow 1.6s ease-in-out infinite;
+}
+.bv-robot-speaking .bv-robot-antenna {
+  animation-duration: 0.5s;
+}
+.bv-robot-chest {
+  animation: bv-glow 2.2s ease-in-out infinite;
+}
+.bv-robot-sweat {
+  animation: bv-drip 1.2s ease-in infinite;
+}
+
+/* ---- the ring (transcript) -------------------------------------- */
+.bv-ring {
+  border-radius: 1.5rem;
+  padding: 1.1rem 1rem 1.25rem;
+  background:
+    radial-gradient(70% 60% at 50% 0%, #241b4e 0%, #120e26 70%),
+    #120e26;
+  border: 1px solid rgb(255 255 255 / 0.07);
+  box-shadow: inset 0 0 40px rgb(0 0 0 / 0.35);
+}
+
+.bv-round-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: #fbbf24;
+  font-size: 0.7rem;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.bv-round-divider::before,
+.bv-round-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(251 191 36 / 0.6), transparent);
+}
+
+.bv-bubble-row {
+  animation: bv-pop 380ms cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+.bv-bubble-row:nth-of-type(odd) {
+  --from: -18px;
+}
+
+.bv-bubble {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  padding: 0.8rem 1rem 0.65rem;
+  border-radius: 1.25rem;
+  border: 2px solid var(--accent);
+  background: #fff;
+  color: var(--color-ink);
+  font-size: 1.04rem;
+  line-height: 1.5;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 0.35);
+}
+.bv-bubble-right {
+  background: var(--accent-soft);
+  border-top-right-radius: 0.35rem;
+}
+.bv-bubble-left {
+  border-top-left-radius: 0.35rem;
+}
+.bv-bubble-live {
+  box-shadow: 0 0 0 3px var(--accent), 0 0 26px var(--accent);
+}
+
+.bv-line {
+  display: block;
+  opacity: 0;
+  animation: bv-line-in 420ms ease-out forwards;
+}
+.bv-line-punch {
+  margin-top: 0.1rem;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 4px;
+}
+
+.bv-typing {
+  display: inline-flex;
+  gap: 5px;
+  padding: 0.7rem 1rem;
+  border-radius: 1.25rem;
+  background: rgb(255 255 255 / 0.12);
+}
+.bv-typing > span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e9d5ff;
+  animation: bv-dots 1s ease-in-out infinite;
+}
+.bv-typing > span:nth-child(2) {
+  animation-delay: 150ms;
+}
+.bv-typing > span:nth-child(3) {
+  animation-delay: 300ms;
+}
+
+/* ---- keyframes -------------------------------------------------- */
+@keyframes bv-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+@keyframes bv-hype {
+  from { transform: translateY(0) rotate(-1.5deg); }
+  to { transform: translateY(-6px) rotate(1.5deg); }
+}
+@keyframes bv-flinch {
+  0% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-7px) rotate(-5deg); }
+  55% { transform: translateX(4px) rotate(3deg); }
+  100% { transform: translateX(0) rotate(-1deg); }
+}
+@keyframes bv-ponder {
+  0%, 100% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+}
+@keyframes bv-talk {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  30% { transform: translateY(-2.5px) rotate(-1.2deg); }
+  70% { transform: translateY(-1px) rotate(1.2deg); }
+}
+@keyframes bv-glow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+@keyframes bv-drip {
+  0% { transform: translateY(-2px); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(12px); opacity: 0; }
+}
+@keyframes bv-lights {
+  from { opacity: 0.65; }
+  to { opacity: 1; }
+}
+@keyframes bv-vs {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+}
+@keyframes bv-pop {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bv-line-in {
+  from { opacity: 0; transform: translateX(-8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bv-dots {
+  0%, 100% { transform: translateY(0); opacity: 0.5; }
+  50% { transform: translateY(-6px); opacity: 1; }
+}
+@keyframes bv-round-slam {
+  0% { opacity: 0; transform: scale(1.7) rotate(-3deg); }
+  18% { opacity: 1; transform: scale(1) rotate(0); }
+  82% { opacity: 1; transform: scale(1) rotate(0); }
+  100% { opacity: 0; transform: scale(0.98) rotate(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bv-line {
+    opacity: 1;
+    animation-delay: 0s !important;
+  }
+  .bv-bubble-row {
+    animation: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .bv-fighter-robot svg {
+    width: 104px;
+    height: auto;
+  }
+  .bv-nameplate-tag {
+    display: none;
   }
 }

@@ -180,6 +180,27 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.activeVerseId, activeSrc]);
 
+  const ensureSrcRef = useRef<(verseId: string) => Promise<string | null>>(async () => null);
+
+  // Autoplay hand-off: when a clip ends, ADVANCE makes the next verse active,
+  // but its audio may not exist yet (it is synthesised on demand). Fetch it
+  // here; otherwise the next robot would wait on "Generating…" forever.
+  useEffect(() => {
+    const activeId = state.activeVerseId;
+    if (!activeId || activeSrc) return;
+    const item = stateRef.current.queue.find((entry) => entry.verseId === activeId);
+    if (!item || item.state !== "loading") return;
+    if (fetchControllers.current.has(activeId)) return; // an explicit play already started it
+    void ensureSrcRef.current(activeId).then((src) => {
+      if (src) return;
+      const now = stateRef.current;
+      const failed = now.queue.find((entry) => entry.verseId === activeId)?.state === "failed";
+      // Skip a verse whose speech failed and carry on with the next one.
+      if (failed && now.activeVerseId === activeId && now.autoplay) dispatch({ type: "ADVANCE" });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.activeVerseId, activeSrc]);
+
   const ensureSrc = useCallback(async (verseId: string): Promise<string | null> => {
     const existing = stateRef.current.queue.find((item) => item.verseId === verseId);
     if (existing?.src) return existing.src;
@@ -204,13 +225,19 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  ensureSrcRef.current = ensureSrc;
+
   const playVerse = useCallback(
     async (verseId: string) => {
       dispatch({ type: "PLAY", verseId });
       // The source effect picks it up as soon as SET_SRC lands in state.
       const src = await ensureSrc(verseId);
       if (!src) {
-        dispatch({ type: "ADVANCE" });
+        const now = stateRef.current;
+        const failed = now.queue.find((item) => item.verseId === verseId)?.state === "failed";
+        if (failed && now.activeVerseId === verseId && now.autoplay) {
+          dispatch({ type: "ADVANCE" });
+        }
       }
     },
     [ensureSrc],

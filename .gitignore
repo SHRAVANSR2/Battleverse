@@ -50,3 +50,4 @@ frontend/e2e-artifacts/
 .DS_Store
 Thumbs.db
 *.log
+*.zip

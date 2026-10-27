@@ -146,16 +146,13 @@ class ProviderTimeoutError(ProviderError):
 class ProviderRateLimitedError(ProviderError):
     status_code = 429
     code = "LLM_RATE_LIMITED"
-    message = "Groq's free-tier rate limit was hit. Give it a few seconds and retry."
+    message = "A model provider's rate limit was hit. Wait a little, then retry."
 
 
 class ProviderAuthError(ProviderError):
     status_code = 502
     code = "LLM_AUTH_FAILED"
-    message = (
-        "Groq rejected the API key. Check GROQ_API_KEY in your .env file and restart "
-        "the backend."
-    )
+    message = "A model provider rejected its API key. Check the local .env configuration."
 
 
 class ProviderInvalidOutputError(ProviderError):
@@ -167,7 +164,7 @@ class ProviderInvalidOutputError(ProviderError):
 class LLMModelUnavailableError(ProviderError):
     status_code = 502
     code = "LLM_MODEL_UNAVAILABLE"
-    message = "The configured Groq model is not available. Update LLM_MODEL in .env."
+    message = "The configured model is not available. Check its model setting."
 
 
 class TTSUnavailableError(ProviderError):

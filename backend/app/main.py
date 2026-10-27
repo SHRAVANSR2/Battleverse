@@ -54,6 +54,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.session_factory = create_session_factory(engine)
     app.state.llm = None
+    app.state.llms = None
     app.state.tts = None
     settings.audio_storage_dir.mkdir(parents=True, exist_ok=True)
     from app.services.audio_storage import AudioStorage
@@ -145,10 +146,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ):
         app.include_router(module.router, prefix="/api")
 
-    if settings.demo_mode:
-        logger.info("LLM provider: demo (GROQ_API_KEY not set — verses are scripted).")
-    else:
-        logger.info("LLM provider: groq (model=%s).", settings.llm_model)
+    logger.info(
+        "LLM assignment: fighter A=Groq (configured=%s), fighter B=Gemini (configured=%s).",
+        bool(settings.groq_api_key),
+        bool(settings.gemini_api_key),
+    )
 
     return app
 

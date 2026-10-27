@@ -22,9 +22,13 @@ export interface Health {
   status: string;
   version: string;
   database_ready: boolean;
-  llm_provider: "groq" | "demo";
+  llm_provider: "groq+gemini" | "demo" | string;
   llm_model: string;
   llm_key_present: boolean;
+  groq_model: string;
+  groq_key_present: boolean;
+  gemini_model: string;
+  gemini_key_present: boolean;
   demo_mode: boolean;
   tts_provider: "piper" | "fake";
   tts_voices: number;
@@ -72,7 +76,7 @@ export interface Verse {
   verse_text: string;
   line_count: number;
   model: string;
-  provider: "groq" | "demo" | string;
+  provider: "groq" | "gemini" | "demo" | string;
   is_demo: boolean;
   created_at: string;
   audio?: AudioAsset | null;

@@ -16,20 +16,27 @@ from app.core.errors import (
 )
 from app.models import Battle, BattleStatus, Verse
 from app.providers.llm.base import LLMProvider, RawCompletion
+from app.providers.llm.registry import LLMProviderPair
 from app.services import battle_engine
 from app.services.battle_queries import get_battle
 from app.services.prompt_builder import build_prompt
 from app.services.results import build_result
 
 
+# Spelled out on purpose: the validator rejects invented digits.
+_TURN_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
+
+
 class CountingProvider(LLMProvider):
     provider_name = "demo"
     model_name = "counting"
 
-    def __init__(self, fail_after: int | None = None):
+    def __init__(self, fail_after: int | None = None, provider_name: str = "demo"):
         self.calls = 0
         self.fail_after = fail_after
         self.requests = []
+        self.provider_name = provider_name
+        self.model_name = f"{provider_name}-test-model"
 
     async def generate_verse(self, request):
         self.calls += 1
@@ -37,7 +44,10 @@ class CountingProvider(LLMProvider):
         if self.fail_after is not None and self.calls > self.fail_after:
             raise ProviderUnavailableError()
         return RawCompletion(
-            text=f"Line one from {request.character_name}\nLine two about turn {request.turn_number}",
+            text=(
+                f"First clean antenna line from {request.character_name} lands clearly\n"
+                f"Another clear antenna response for turn {_TURN_WORDS[request.turn_number % 10]} lands cleanly now"
+            ),
             model=self.model_name,
             provider=self.provider_name,
         )
@@ -82,6 +92,105 @@ def test_idempotent_replay_does_not_call_provider(client, characters, session, s
     assert replay.created is False
     assert provider.calls == 1
     assert replay.verse_payload["id"] == first.verse_payload["id"]
+
+
+def test_fighter_side_selects_its_assigned_provider(
+    client, characters, session, session_factory
+):
+    battle = _battle(session, characters)
+    groq = CountingProvider(provider_name="groq")
+    gemini = CountingProvider(provider_name="gemini")
+    providers = LLMProviderPair(fighter_a=groq, fighter_b=gemini)
+
+    first = asyncio.run(
+        battle_engine.generate_turn(
+            session_factory=session_factory, battle_id=battle.id, llm=providers
+        )
+    )
+    second = asyncio.run(
+        battle_engine.generate_turn(
+            session_factory=session_factory,
+            battle_id=battle.id,
+            llm=providers,
+            expected_turn_number=2,
+        )
+    )
+
+    assert first.verse_payload["provider"] == "groq"
+    assert second.verse_payload["provider"] == "gemini"
+    assert groq.calls == gemini.calls == 1
+
+
+class FlakyGeminiProvider(LLMProvider):
+    """Gemini side that 503s on the first call, then answers like the real
+    fallback retry would (the adapter picks the model; the engine just sees
+    a provider that raised once and then succeeds)."""
+
+    provider_name = "gemini"
+    model_name = "gemini-test-model"
+
+    def __init__(self):
+        self.calls = 0
+
+    async def generate_verse(self, request):
+        self.calls += 1
+        if self.calls == 1:
+            raise ProviderUnavailableError()
+        return RawCompletion(
+            text=(
+                "You called that line clear, but clearly not\n"
+                "Your antenna polish peels like old paint"
+            ),
+            model=self.model_name,
+            provider=self.provider_name,
+        )
+
+    async def health(self):
+        return True, "ok"
+
+
+def test_gemini_side_503_then_retry_saves_gemini_tagged_verse(
+    client, characters, session, session_factory
+):
+    """A Gemini 503 must not advance the turn; the client retry (same turn
+    number) saves exactly one verse, honestly tagged 'gemini'."""
+    battle = _battle(session, characters, rounds=1)
+    providers = LLMProviderPair(
+        fighter_a=CountingProvider(provider_name="groq"),
+        fighter_b=FlakyGeminiProvider(),
+    )
+
+    asyncio.run(
+        battle_engine.generate_turn(
+            session_factory=session_factory, battle_id=battle.id, llm=providers
+        )
+    )
+
+    with pytest.raises(ProviderUnavailableError):
+        asyncio.run(
+            battle_engine.generate_turn(
+                session_factory=session_factory,
+                battle_id=battle.id,
+                llm=providers,
+                expected_turn_number=2,
+            )
+        )
+    with session_factory() as check:
+        assert check.query(Verse).filter_by(battle_id=battle.id).count() == 1
+        assert get_battle(check, battle.id).next_turn_number == 2
+
+    result = asyncio.run(
+        battle_engine.generate_turn(
+            session_factory=session_factory,
+            battle_id=battle.id,
+            llm=providers,
+            expected_turn_number=2,
+        )
+    )
+    assert result.created is True
+    assert result.verse_payload["provider"] == "gemini"
+    with session_factory() as check:
+        assert check.query(Verse).filter_by(battle_id=battle.id).count() == 2
 
 
 def test_failure_leaves_battle_untouched(client, characters, session, session_factory):
@@ -311,7 +420,11 @@ def test_memory_is_written_and_injected(client, characters, session, session_fac
     assert len(winner_memories) == 1
     assert "Beat" in winner_memories[0].summary
     assert len(loser_memories) == 1
-    assert "Lost to" in loser_memories[0].summary
+    # The loser's memory must name the winner (not the "the winner" fallback)…
+    assert f"Lost to {characters[0]['name']}" in loser_memories[0].summary
+    # …and neither memory may carry the old topic, which leaks into future prompts.
+    for memory in [*winner_memories, *loser_memories]:
+        assert "antenna" not in memory.summary
 
     # And the rematch prompt must contain it.
     with session_factory() as db:

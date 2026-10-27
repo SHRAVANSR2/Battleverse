@@ -21,14 +21,32 @@ describe("RobotAvatar", () => {
     expect(nova).not.toEqual(rook);
   });
 
+  it("draws four different robots, even in the same colour", () => {
+    const faces = (["nova", "rook", "baron", "gizmo"] as const).map(
+      (variant) => render(<RobotAvatar accent="mint" variant={variant} />).container.innerHTML,
+    );
+    expect(new Set(faces).size).toBe(4);
+  });
+
+  it("changes expression with mood", () => {
+    const idle = render(<RobotAvatar accent="mint" variant="baron" mood="idle" />).container.innerHTML;
+    const speaking = render(<RobotAvatar accent="mint" variant="baron" speaking />).container;
+    expect(speaking.querySelector("svg")).toHaveClass("bv-robot-speaking");
+    expect(speaking.innerHTML).not.toEqual(idle);
+  });
+
   it("maps accents to palettes with a safe fallback", () => {
     expect(paletteFor("mint").body).toBe("#14b8a6");
     expect(paletteFor("coral").body).toBe("#f43f5e");
+    expect(paletteFor("violet").body).toBe("#8b5cf6");
+    expect(paletteFor("amber").body).toBe("#f59e0b");
     expect(paletteFor("unknown").body).toBe("#14b8a6");
   });
 
   it("derives the variant from the name", () => {
     expect(variantForName("Rook Blaze")).toBe("rook");
     expect(variantForName("Nova Vex")).toBe("nova");
+    expect(variantForName("Baron Byte")).toBe("baron");
+    expect(variantForName("Gizmo Jinx")).toBe("gizmo");
   });
 });

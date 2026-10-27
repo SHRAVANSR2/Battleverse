@@ -53,7 +53,17 @@ class PiperTTSProvider(TTSProvider):
         missing = [vid for vid in self._voices if not self.voice_available(vid)]
         return (not missing), missing
 
-    async def synthesize(self, text: str, voice_id: str) -> AudioResult:
+    async def synthesize_styled(
+        self, text: str, voice_id: str, style: str | None = None
+    ) -> AudioResult:
+        from app.services.speech_text import RAP_LENGTH_SCALE
+
+        scale = RAP_LENGTH_SCALE if style == "rap" else None
+        return await self.synthesize(text, voice_id, length_scale=scale)
+
+    async def synthesize(
+        self, text: str, voice_id: str, *, length_scale: float | None = None
+    ) -> AudioResult:
         voice = self._voices.get(voice_id)
         if voice is None:
             raise TTSUnavailableError(f"Voice '{voice_id}' is not a known Piper voice.")
@@ -69,7 +79,8 @@ class PiperTTSProvider(TTSProvider):
         started = time.perf_counter()
         try:
             data, sample_rate = await asyncio.wait_for(
-                asyncio.to_thread(self._synthesize_sync, text, voice), timeout=self._timeout
+                asyncio.to_thread(self._synthesize_sync, text, voice, length_scale),
+                timeout=self._timeout,
             )
         except TimeoutError as exc:
             raise TTSSynthesisError(
@@ -118,16 +129,15 @@ class PiperTTSProvider(TTSProvider):
             logger.info("Loaded Piper voice %s", voice.id)
             return loaded
 
-    def _synthesize_sync(self, text: str, voice: Voice) -> tuple[bytes, int]:
+    def _synthesize_sync(
+        self, text: str, voice: Voice, length_scale: float | None = None
+    ) -> tuple[bytes, int]:
         piper_voice = self._load_voice(voice)
         lock = self._locks[voice.id]
         if not lock.acquire(timeout=self._timeout):
             raise TTSSynthesisError("That voice is busy speaking another line.")
         try:
-            buffer = io.BytesIO()
-            with wave.open(buffer, "wb") as wav_file:
-                piper_voice.synthesize_wav(text, wav_file)
-            data = buffer.getvalue()
+            data = _render(piper_voice, text, length_scale)
         finally:
             lock.release()
 
@@ -136,6 +146,32 @@ class PiperTTSProvider(TTSProvider):
         with wave.open(io.BytesIO(data), "rb") as probe:
             sample_rate = probe.getframerate()
         return data, sample_rate
+
+
+def _render(piper_voice, text: str, length_scale: float | None) -> bytes:
+    """Synthesize to WAV bytes, optionally with a speaking-rate override.
+
+    If the installed piper build does not accept ``syn_config`` we fall back to
+    default pacing rather than failing the verse.
+    """
+    options: dict[str, object] = {}
+    if length_scale is not None and abs(length_scale - 1.0) > 1e-6:
+        try:
+            from piper import SynthesisConfig
+
+            options["syn_config"] = SynthesisConfig(length_scale=length_scale)
+        except ImportError:
+            pass
+    for attempt in (options, {}):
+        buffer = io.BytesIO()
+        try:
+            with wave.open(buffer, "wb") as wav_file:
+                piper_voice.synthesize_wav(text, wav_file, **attempt)
+            return buffer.getvalue()
+        except TypeError:
+            if not attempt:
+                raise
+    raise TTSSynthesisError()  # pragma: no cover - loop always returns or raises
 
 
 def _duration_ms(wav_bytes: bytes) -> int:

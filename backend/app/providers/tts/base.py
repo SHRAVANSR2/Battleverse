@@ -38,6 +38,12 @@ class TTSProvider(ABC):
     async def synthesize(self, text: str, voice_id: str) -> AudioResult:
         """Render speech. Raises AppError subclasses on failure."""
 
+    async def synthesize_styled(
+        self, text: str, voice_id: str, style: str | None = None
+    ) -> AudioResult:
+        """Style-aware synthesis. Engines without style controls ignore ``style``."""
+        return await self.synthesize(text, voice_id)
+
     @abstractmethod
     def health(self) -> tuple[bool, list[str]]:
         """(ready, missing voice ids). Must not load models."""

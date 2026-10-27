@@ -24,9 +24,11 @@ def _create_battle(client, characters, rounds: int = 2):
 def test_health(client):
     body = client.get("/api/health").json()
     assert body["database_ready"] is True
-    assert body["demo_mode"] is True
-    assert body["llm_provider"] == "demo"
-    assert "groq_api_key" not in str(body).lower()
+    assert body["demo_mode"] is False
+    assert body["llm_provider"] == "groq+gemini"
+    assert body["groq_key_present"] is False
+    assert body["gemini_key_present"] is False
+    assert "api_key" not in str(body).lower()
 
 
 def test_full_flow(client, characters):
@@ -102,7 +104,7 @@ def test_full_flow(client, characters):
     assert rematch.json()["previous_battle_id"] == battle_id
 
     leaderboard = client.get("/api/leaderboard").json()
-    assert len(leaderboard) == 2
+    assert len(leaderboard) == 4  # four built-in robots
     assert any(row["wins"] >= 1 for row in leaderboard)
 
 

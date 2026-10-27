@@ -23,6 +23,10 @@ class HealthOut(BaseModel):
     llm_provider: str
     llm_model: str
     llm_key_present: bool
+    groq_model: str
+    groq_key_present: bool
+    gemini_model: str
+    gemini_key_present: bool
     demo_mode: bool
     tts_provider: str
     tts_voices: int = 0

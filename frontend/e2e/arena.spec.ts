@@ -127,11 +127,16 @@ test("mobile view stacks into one readable column", async ({ page }) => {
   await page.getByRole("button", { name: /let nova vex start/i }).click();
   await expect(page.locator("article[data-verse-id]")).toHaveCount(1);
 
-  const columnTops = await page
-    .locator("section[aria-label='Battle transcript'] > div")
-    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().top));
-  expect(columnTops).toHaveLength(2);
-  expect(columnTops[1]).toBeGreaterThan(columnTops[0]);
+  // One chronological ring: the stage sits above the transcript and the
+  // verse is fully inside the viewport width (no sideways scrolling).
+  const stage = page.getByRole("region", { name: /battle stage/i });
+  await expect(stage).toBeVisible();
+  const stageBox = await stage.boundingBox();
+  const verseBox = await page.locator("article[data-verse-id]").first().boundingBox();
+  expect(stageBox).not.toBeNull();
+  expect(verseBox).not.toBeNull();
+  expect(verseBox!.y).toBeGreaterThan(stageBox!.y);
+  expect(verseBox!.x + verseBox!.width).toBeLessThanOrEqual(390 + 1);
 
   await shot(page, "arena-mobile");
 });

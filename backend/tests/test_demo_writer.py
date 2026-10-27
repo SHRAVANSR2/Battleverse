@@ -14,6 +14,7 @@ from app.providers.llm.base import VerseRequest
 from app.providers.llm.demo_writer import DemoWriter
 from app.seeds.characters import BUILTIN_CHARACTERS
 from app.services.prompt_builder import build_prompt
+from app.services.verse_validator import parse_verse
 
 TOPIC = "best antenna polish"
 OPPONENT_VERSE = (
@@ -123,6 +124,17 @@ async def test_opening_turn_does_not_invent_an_opponent_line():
 async def test_respects_the_line_limit():
     completion = await DemoWriter().generate_verse(_request(2, max_lines=2))
     assert len(completion.text.splitlines()) == 2
+
+
+@pytest.mark.asyncio
+async def test_scripted_lines_satisfy_verse_word_limits():
+    for style in ("rap", "roast", "debate"):
+        for turn in (1, 2):
+            completion = await DemoWriter().generate_verse(
+                _request(turn, metadata={"style": style})
+            )
+            parse_verse(completion.text)
+            assert not any(character.isdigit() for character in completion.text)
 
 
 @pytest.mark.asyncio

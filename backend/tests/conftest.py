@@ -36,6 +36,7 @@ def settings(tmp_root: Path) -> Settings:
         app_env="test",
         database_url=f"sqlite+pysqlite:///{(tmp_root / 'test.db').as_posix()}",
         groq_api_key="",
+        gemini_api_key="",
         tts_provider="fake",
         tts_voices_dir=tmp_root / "models",
         audio_storage_dir=tmp_root / "audio",

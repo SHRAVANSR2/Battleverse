@@ -114,4 +114,39 @@ describe("audioMachine", () => {
     expect(state.mode).toBe("blocked");
     expect(state.blockedReason).toBe("Tap play.");
   });
+
+  it("syncing the queue with new verses never disturbs the one being spoken", () => {
+    let state = withQueue(["v1", "v2"], "");
+    state = audioReducer(state, { type: "PLAY", verseId: "v1" });
+    state = audioReducer(state, { type: "SET_SRC", verseId: "v1", src: "/api/audio/v1" });
+    state = audioReducer(state, { type: "PLAYING", verseId: "v1" });
+
+    // auto mode: two more verses land while v1 is still speaking
+    state = audioReducer(state, {
+      type: "REPLACE_QUEUE",
+      items: ["v1", "v2", "v3", "v4"].map((verseId) => ({ verseId, src: null })),
+    });
+
+    expect(state.activeVerseId).toBe("v1");
+    expect(state.mode).toBe("playing");
+    expect(state.queue.find((i) => i.verseId === "v1")?.src).toBe("/api/audio/v1");
+    expect(state.queue.map((i) => i.verseId)).toEqual(["v1", "v2", "v3", "v4"]);
+    expect(state.queue.find((i) => i.verseId === "v4")?.state).toBe("queued");
+  });
+
+  it("never restarts from the top when nothing is active", () => {
+    let state = withQueue(["v1", "v2"], "");
+    state = audioReducer(state, { type: "ADVANCE" });
+    expect(state.activeVerseId).toBeNull();
+    expect(state.mode).toBe("idle");
+  });
+
+  it("remembers that the listener pressed Stop until they press Play", () => {
+    let state = withQueue(["v1", "v2"], "");
+    state = audioReducer(state, { type: "PLAY", verseId: "v1" });
+    state = audioReducer(state, { type: "STOP_ALL" });
+    expect(state.stoppedByUser).toBe(true);
+    state = audioReducer(state, { type: "PLAY", verseId: "v2" });
+    expect(state.stoppedByUser).toBe(false);
+  });
 });

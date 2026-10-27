@@ -48,11 +48,13 @@ export function HomePage() {
         </div>
       </section>
 
-      {health?.demo_mode ? (
-        <Banner tone="demo" className="mb-6">
-          <strong>Demo Mode.</strong> No Groq API key is configured, so verses are scripted by a
-          local deterministic writer — not AI-generated. Add <code>GROQ_API_KEY</code> to your{" "}
-          <code>.env</code> and restart the backend for real AI verses.
+      {health && (!health.groq_key_present || !health.gemini_key_present) ? (
+        <Banner tone="warn" className="mb-6">
+          <strong>Model keys missing.</strong> Configure{" "}
+          {!health.groq_key_present ? <code>GROQ_API_KEY</code> : null}
+          {!health.groq_key_present && !health.gemini_key_present ? " and " : null}
+          {!health.gemini_key_present ? <code>GEMINI_API_KEY</code> : null} in your local{" "}
+          <code>.env</code> file and restart the backend. Each fighter uses its assigned provider.
         </Banner>
       ) : null}
 
@@ -137,7 +139,7 @@ export function HomePage() {
         {healthLoading
           ? "Checking backend…"
           : health
-            ? `Backend ${health.version} · ${health.llm_provider === "demo" ? "Demo writer" : `Groq (${health.llm_model})`} · TTS ${health.tts_provider}`
+            ? `Backend ${health.version} · Groq ${health.groq_model} / Gemini ${health.gemini_model} · TTS ${health.tts_provider}`
             : "Backend offline — start it with the README instructions."}
       </p>
     </AppShell>

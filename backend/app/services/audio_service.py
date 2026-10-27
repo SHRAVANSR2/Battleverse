@@ -26,6 +26,7 @@ from app.core.errors import (
 )
 from app.models import AudioAsset, AudioStatus, Verse
 from app.providers.tts.base import TTSProvider
+from app.services.speech_text import shape_for_speech
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +93,13 @@ async def ensure_audio(
             f"That verse is too long to speak (limit {settings.tts_max_text_chars} characters)."
         )
 
+    style = verse.battle.style.value
+    spoken_text = shape_for_speech(verse.verse_text, style)
     cache_key = build_cache_key(
-        tts.provider_name, voice_id, settings_signature(settings), verse.verse_text
+        tts.provider_name,
+        voice_id,
+        f"{settings_signature(settings)}|style={style}|speech=v2",
+        spoken_text,
     )
 
     # --- existing row for this verse ---------------------------------------
@@ -131,7 +137,7 @@ async def ensure_audio(
 
     # --- synthesize (no transaction held open by us) ------------------------
     try:
-        result = await tts.synthesize(verse.verse_text, voice_id)
+        result = await tts.synthesize_styled(spoken_text, voice_id, style)
     except Exception as exc:
         code = getattr(exc, "code", "TTS_SYNTHESIS_FAILED")
         _record_failure(session, verse, tts.provider_name, voice_id, cache_key, code)

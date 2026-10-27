@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
 from app.providers.llm.base import LLMProvider
+from app.providers.llm.registry import LLMProviderPair
 from app.providers.tts.base import TTSProvider
 
 
@@ -35,14 +36,18 @@ def get_db(
 def get_llm(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings_dep)],
-) -> LLMProvider:
+) -> LLMProvider | LLMProviderPair:
     provider = getattr(request.app.state, "llm", None)
-    if provider is None:
-        from app.providers.llm.registry import build_llm_provider
+    if provider is not None:
+        return provider
 
-        provider = build_llm_provider(settings)
-        request.app.state.llm = provider
-    return provider
+    providers = getattr(request.app.state, "llms", None)
+    if providers is None:
+        from app.providers.llm.registry import build_llm_providers
+
+        providers = build_llm_providers(settings)
+        request.app.state.llms = providers
+    return providers
 
 
 def get_tts(
@@ -61,5 +66,5 @@ def get_tts(
 SettingsDep = Annotated[Settings, Depends(get_settings_dep)]
 SessionDep = Annotated[Session, Depends(get_db)]
 SessionFactoryDep = Annotated[sessionmaker[Session], Depends(get_session_factory)]
-LLMDep = Annotated[LLMProvider, Depends(get_llm)]
+LLMDep = Annotated[LLMProvider | LLMProviderPair, Depends(get_llm)]
 TTSDep = Annotated[TTSProvider, Depends(get_tts)]

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AppShell } from "../components/layout/AppShell";
 import { PageHeader } from "../components/layout/PageHeader";
-import { FighterCard } from "../components/battle/FighterCard";
+import { BattleStage } from "../components/battle/BattleStage";
 import { SpeechBubble } from "../components/battle/SpeechBubble";
 import { AudioBar } from "../components/audio/AudioBar";
 import { Banner } from "../components/ui/Banner";
@@ -11,8 +11,10 @@ import { Chip } from "../components/ui/Chip";
 import { ErrorState } from "../components/ui/ErrorState";
 import { LoadingBlock } from "../components/ui/LoadingBlock";
 import { useAudio } from "../audio/AudioProvider";
+import { useRapBeat } from "../hooks/useRapBeat";
 import { useBattle } from "../hooks/useBattle";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { RobotAvatar, variantForName } from "../components/character/RobotAvatar";
 import { VotingPanel } from "../components/battle/VotingPanel";
 
 export function BattleArenaPage() {
@@ -21,6 +23,9 @@ export function BattleArenaPage() {
     useBattle(battleId);
   const audio = useAudio();
   const autoStarted = useRef(false);
+  /** True once this page visit has started a live auto battle (not a replay of an old one). */
+  const liveAuto = useRef(false);
+  const lastAutoSpoken = useRef<string | null>(null);
 
   useDocumentTitle(battle ? `${battle.fighter_a.name} vs ${battle.fighter_b.name}` : "Battle");
 
@@ -39,14 +44,44 @@ export function BattleArenaPage() {
     if (battle.status !== "in_progress" && battle.status !== "created") return;
     if (autoStarted.current) return;
     autoStarted.current = true;
+    liveAuto.current = true;
     void runAuto();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [battle?.id, battle?.playback_mode]);
+
+  // Auto mode: speak every verse in order, hands-free. The audio queue chains
+  // verses that are already waiting; this covers the first verse and any verse
+  // that lands after the previous one has finished (a slow turn).
+  useEffect(() => {
+    if (!battle || battle.playback_mode !== "auto" || !liveAuto.current) return;
+    const a = audio.state;
+    if (!a.autoplay || a.stoppedByUser || a.mode !== "idle") return;
+    const next = a.queue.find((item) => item.state === "queued");
+    if (!next || lastAutoSpoken.current === next.verseId) return;
+    lastAutoSpoken.current = next.verseId;
+    void audio.playVerse(next.verseId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [battle?.playback_mode, audio.state.mode, audio.state.queue, audio.state.autoplay, audio.state.stoppedByUser]);
+
+  // Keep the newest line in view as the exchange grows.
+  const endRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (allVerses.length === 0) return;
+    endRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [allVerses.length, generating]);
 
   const speakingId = useMemo(() => {
     const verse = allVerses.find((item) => audio.isSpeaking(item.id));
     return verse?.id ?? null;
   }, [allVerses, audio]);
+
+  // Backing beat: matches the battle style, only while a verse is spoken.
+  const beat = useRapBeat({
+    style: battle?.style ?? "rap",
+    speaking: audio.state.mode === "playing" && Boolean(audio.state.activeVerseId),
+    muted: audio.state.muted,
+    volume: audio.state.volume,
+  });
 
   if (loading && !battle) {
     return (
@@ -75,6 +110,8 @@ export function BattleArenaPage() {
 
   const fighterA = battle.fighter_a;
   const fighterB = battle.fighter_b;
+  const speakingVerse = allVerses.find((v) => v.id === speakingId) ?? null;
+  const nextSpeaker = battle.next_turn_number % 2 === 1 ? fighterA : fighterB;
   const inProgress = battle.status === "in_progress" || battle.status === "created";
   const finished = battle.status === "awaiting_vote" || battle.status === "completed";
 
@@ -100,20 +137,17 @@ export function BattleArenaPage() {
         }
       />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2">
-        <FighterCard
-          character={fighterA}
-          side="left"
-          speaking={speakingId !== null && allVerses.find((v) => v.id === speakingId)?.character_id === fighterA.id}
-          active={speakingId !== null && allVerses.find((v) => v.id === speakingId)?.character_id === fighterA.id}
-        />
-        <FighterCard
-          character={fighterB}
-          side="right"
-          speaking={speakingId !== null && allVerses.find((v) => v.id === speakingId)?.character_id === fighterB.id}
-          active={speakingId !== null && allVerses.find((v) => v.id === speakingId)?.character_id === fighterB.id}
-        />
-      </div>
+      <BattleStage
+        fighterA={fighterA}
+        fighterB={fighterB}
+        topic={battle.topic}
+        speakingCharacterId={speakingVerse?.character_id ?? null}
+        thinkingCharacterId={generating ? nextSpeaker.id : null}
+        lastSpeakerId={allVerses.length > 0 ? allVerses[allVerses.length - 1]!.character_id : null}
+        currentRound={Math.min(battle.round_count, Math.max(1, Math.ceil(battle.next_turn_number / 2)))}
+        roundCount={battle.round_count}
+        finished={finished}
+      />
 
       {battle.playback_mode === "auto" && inProgress ? (
         <Banner tone="info" className="mb-4">
@@ -148,29 +182,58 @@ export function BattleArenaPage() {
         </Banner>
       ) : null}
 
-      <section aria-label="Battle transcript" className="grid gap-4 sm:grid-cols-2">
-        <Column
-          title={fighterA.name}
-          verses={allVerses.filter((v) => v.character_id === fighterA.id)}
-          side="left"
-          audio={audio}
-        />
-        <Column
-          title={fighterB.name}
-          verses={allVerses.filter((v) => v.character_id === fighterB.id)}
-          side="right"
-          audio={audio}
-        />
-      </section>
+      <section aria-label="Battle transcript" className="bv-ring">
+        <div className="flex flex-col gap-4">
+          {allVerses.map((verse, index) => {
+            const isA = verse.character_id === fighterA.id;
+            const newRound = index === 0 || allVerses[index - 1]!.round_number !== verse.round_number;
+            return (
+              <Fragment key={verse.id}>
+                {newRound ? (
+                  <div className="bv-round-divider" role="separator" aria-label={`Round ${verse.round_number}`}>
+                    <span>Round {verse.round_number}</span>
+                  </div>
+                ) : null}
+                <SpeechBubble
+                  verse={verse}
+                  side={isA ? "left" : "right"}
+                  speaking={audio.isSpeaking(verse.id)}
+                  pending={audio.pendingFor(verse.id)}
+                  error={audio.errorFor(verse.id)}
+                  onPlay={(id) => void audio.playVerse(id)}
+                />
+              </Fragment>
+            );
+          })}
 
-      {allVerses.length === 0 ? (
-        <div className="bv-card mx-auto mt-4 max-w-lg px-6 py-10 text-center">
-          <p className="text-sm text-[var(--color-muted)]">
-            No verses yet. Press <strong>Generate next turn</strong> to let{" "}
-            {fighterA.name} open the battle.
-          </p>
+          {generating ? (
+            <div
+              className={`flex items-center gap-3 ${nextSpeaker.id === fighterB.id ? "flex-row-reverse" : ""}`}
+              role="status"
+              aria-label={`${nextSpeaker.name} is writing a verse`}
+            >
+              <RobotAvatar
+                accent={nextSpeaker.accent}
+                variant={variantForName(nextSpeaker.name)}
+                size={52}
+                mood="thinking"
+              />
+              <span className="bv-typing" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            </div>
+          ) : null}
+          <div ref={endRef} />
         </div>
-      ) : null}
+
+        {allVerses.length === 0 && !generating ? (
+          <p className="m-0 py-6 text-center text-sm text-slate-400">
+            The ring is quiet. Ring the bell to start the battle.
+          </p>
+        ) : null}
+      </section>
 
       <div className="mt-5 grid gap-3">
         {inProgress ? (
@@ -201,38 +264,21 @@ export function BattleArenaPage() {
         {finished ? <VotingPanel battle={battle} onDecided={() => void refresh()} /> : null}
 
         {allVerses.length > 0 ? <AudioBar /> : null}
+        {beat.supported ? (
+          <button
+            type="button"
+            onClick={beat.toggle}
+            aria-pressed={beat.enabled}
+            className="bv-card bv-transition flex items-center gap-2 px-4 py-2 text-sm font-semibold hover:shadow-[var(--shadow-soft)]"
+          >
+            <span aria-hidden="true">🥁</span>
+            Beat: {beat.enabled ? "On" : "Off"}
+            <span className="text-xs font-normal text-[var(--color-muted)]">
+              plays under {battle?.style ?? "rap"} verses
+            </span>
+          </button>
+        ) : null}
       </div>
     </AppShell>
-  );
-}
-
-function Column({
-  title,
-  verses,
-  side,
-  audio,
-}: {
-  title: string;
-  verses: import("../types/api").Verse[];
-  side: "left" | "right";
-  audio: ReturnType<typeof useAudio>;
-}) {
-  return (
-    <div className="flex flex-col gap-3">
-      <h2 className="text-sm font-bold uppercase tracking-wide text-[var(--color-muted)]">
-        {title}
-      </h2>
-      {verses.map((verse) => (
-        <SpeechBubble
-          key={verse.id}
-          verse={verse}
-          side={side}
-          speaking={audio.isSpeaking(verse.id)}
-          pending={audio.pendingFor(verse.id)}
-          error={audio.errorFor(verse.id)}
-          onPlay={(id) => void audio.playVerse(id)}
-        />
-      ))}
-    </div>
   );
 }

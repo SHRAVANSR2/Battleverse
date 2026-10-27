@@ -39,13 +39,17 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+pysqlite:///./storage/battleverse.db"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # --- LLM (Groq primary; absent key => Demo Mode) ---
+    # --- LLM providers (fighter A uses Groq; fighter B uses Gemini) ---
     groq_api_key: str = ""
     llm_model: str = "openai/gpt-oss-120b"
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.8-flash"
+    # Used for one retry when the main Gemini model is temporarily overloaded (503).
+    gemini_fallback_model: str = "gemini-3.1-flash-lite"
     llm_timeout_seconds: float = 45.0
     llm_max_retries: int = 1
-    llm_temperature: float = 0.9
-    llm_max_tokens: int = 320
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 1500
 
     # --- TTS (Piper, local) ---
     tts_provider: Literal["piper", "fake"] = "piper"
@@ -59,6 +63,11 @@ class Settings(BaseSettings):
     @field_validator("groq_api_key")
     @classmethod
     def _clean_key(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("gemini_api_key")
+    @classmethod
+    def _clean_gemini_key(cls, value: str) -> str:
         return value.strip()
 
     @field_validator("llm_max_retries")
@@ -84,16 +93,24 @@ class Settings(BaseSettings):
 
     @property
     def llm_provider_name(self) -> str:
-        """``groq`` when a key is configured, else ``demo``."""
-        return "groq" if self.groq_api_key else "demo"
+        """The two providers assigned to fighter A and fighter B."""
+        return "groq+gemini"
 
     @property
     def demo_mode(self) -> bool:
-        return not self.groq_api_key
+        return False
 
     @property
     def has_llm_key(self) -> bool:
+        return bool(self.groq_api_key and self.gemini_api_key)
+
+    @property
+    def has_groq_key(self) -> bool:
         return bool(self.groq_api_key)
+
+    @property
+    def has_gemini_key(self) -> bool:
+        return bool(self.gemini_api_key)
 
     @property
     def cors_origin_list(self) -> list[str]:

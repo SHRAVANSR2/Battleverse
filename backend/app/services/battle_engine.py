@@ -14,7 +14,7 @@ Correctness rules (each has a dedicated test):
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -24,6 +24,7 @@ from app.core.errors import (
     BattleNotInProgressError,
     BattleNotVotableError,
     TurnBusyError,
+    ProviderInvalidOutputError,
     TurnConflictError,
     ValidationFailedError,
 )
@@ -37,6 +38,7 @@ from app.models import (
     Verse,
 )
 from app.providers.llm.base import LLMProvider, VerseRequest
+from app.providers.llm.registry import LLMProviderPair
 from app.schemas.battle import CreateBattleIn
 from app.services import turn_math
 from app.services.battle_queries import (
@@ -51,9 +53,9 @@ from app.services.battle_queries import (
 )
 from app.services.locks import battle_lock
 from app.services.memory import record_result_memories
-from app.services.prompt_builder import build_prompt
+from app.services.prompt_builder import build_prompt, echo_terms, topic_terms
 from app.services.results import build_result
-from app.services.verse_validator import parse_verse
+from app.services.verse_validator import numbers_in, parse_verse
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,7 @@ async def generate_turn(
     *,
     session_factory: sessionmaker[Session],
     battle_id: str,
-    llm: LLMProvider,
+    llm: LLMProvider | LLMProviderPair,
     expected_turn_number: int | None = None,
 ) -> TurnResult:
     # --- 1. cheap pre-checks (outside the lock) -----------------------------
@@ -173,7 +175,7 @@ async def generate_turn(
             opponent_id = battle.fighter_b_id if turn_math.speaker_is_a(turn_number) else battle.fighter_a_id
             speaker = get_character(session, speaker_id)
             opponent = get_character(session, opponent_id)
-            history = latest_verses(session, battle_id, limit=3)
+            history = latest_verses(session, battle_id, limit=6)  # transcript shows last 3; all 6 feed the "already used" list
             memories = _memories(session, speaker.id, opponent.id)
             prompt = build_prompt(
                 battle=battle,
@@ -192,10 +194,55 @@ async def generate_turn(
                 turn_number=turn_number,
                 metadata={"style": battle.style.value, "intensity": battle.intensity.value},
             )
+            provider = (
+                llm.for_fighter_a(speaker.id == battle.fighter_a_id)
+                if isinstance(llm, LLMProviderPair)
+                else llm
+            )
+            # Numbers the verse may use: only ones the topic or opponent already said.
+            allowed_numbers = numbers_in(battle.topic)
+            for earlier in history[-2:]:
+                allowed_numbers |= numbers_in(earlier.verse_text)
+            # A rebuttal must pick up a word from the opponent's latest verse.
+            last_opponent = next(
+                (v for v in reversed(history) if v.character_id != speaker.id), None
+            )
+            echo_words = (
+                echo_terms(last_opponent.verse_text, battle.topic) if last_opponent else []
+            )
+            must_echo = frozenset(echo_words)
+            # Every verse must touch the topic; short topics yield no terms and
+            # the check stays off (mirrors the reply-echo mechanism).
+            topic_words = topic_terms(battle.topic)
+            must_touch_topic = frozenset(topic_words)
 
         # --- 3. provider call: NO transaction open ---------------------------
-        completion = await llm.generate_verse(request)
-        parsed = parse_verse(completion.text)
+        completion = await provider.generate_verse(request)
+        try:
+            parsed = parse_verse(completion.text, allowed_numbers, must_echo, must_touch_topic)
+        except ProviderInvalidOutputError:
+            # One rewrite attempt. Still only one verse is ever saved.
+            logger.info("Verse rejected for turn %d; asking for one rewrite.", turn_number)
+            retry_request = replace(
+                request,
+                user_prompt=request.user_prompt
+                + "\n\nYour last attempt was rejected. Rewrite it as 3-4 plain spoken "
+                "lines, each 7-12 words, with no digits or invented numbers."
+                + (
+                    " Your first line must answer the opponent by using one of "
+                    "their words: " + ", ".join(echo_words[:6]) + "."
+                    if echo_words
+                    else ""
+                )
+                + (
+                    " The verse must mention the topic, using at least one of: "
+                    + ", ".join(topic_words[:6]) + "."
+                    if topic_words
+                    else ""
+                ),
+            )
+            completion = await provider.generate_verse(retry_request)
+            parsed = parse_verse(completion.text, allowed_numbers, must_echo, must_touch_topic)
 
         # --- 4. compare-and-swap write --------------------------------------
         with session_factory() as session:

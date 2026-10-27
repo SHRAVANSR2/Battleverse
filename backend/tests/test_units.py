@@ -36,27 +36,63 @@ class TestTurnMath:
 class TestVerseValidator:
     def test_json_payload(self):
         parsed = parse_verse(
-            '{"verse_text": "First line here\\nSecond line here", "line_count": 2, '
+            '{"verse_text": "First line about robots lands a clear punchline\\n'
+            'Second line about debugging ends with a clever answer", "line_count": 2, '
             '"callback_reference": "spark"}'
         )
         assert parsed.line_count == 2
-        assert parsed.verse_text == "First line here\nSecond line here"
+        assert parsed.verse_text == (
+            "First line about robots lands a clear punchline\n"
+            "Second line about debugging ends with a clever answer"
+        )
         assert parsed.callback_reference == "spark"
 
     def test_markdown_fenced_json(self):
-        raw = '```json\n{"verse_text": "A line about robots\\nAnother line here"}\n```'
+        raw = (
+            '```json\n{"verse_text": "A short line about robots lands a clever punchline\\n'
+            'Another line about debugging ends with a clever answer"}\n```'
+        )
         parsed = parse_verse(raw)
         assert "Another line" in parsed.verse_text
 
     def test_plain_text(self):
-        parsed = parse_verse("First plain line\nSecond plain line")
+        parsed = parse_verse(
+            "First plain line lands a clean joke about robots\n"
+            "Second plain line gives the crowd a sharp answer"
+        )
+        assert parsed.line_count == 2
+
+    def test_accepts_seven_and_twelve_word_lines(self):
+        parsed = parse_verse(
+            "Seven words make this line fit nicely\n"
+            "This line reaches the top of the allowed range exactly right here"
+        )
         assert parsed.line_count == 2
 
     def test_strips_bullets_stage_directions_emoji(self):
-        parsed = parse_verse("1. (laughs) Hello there friend 🎤\n- And a second line, folks")
+        parsed = parse_verse(
+            "1. (laughs) Hello there friend your signal drops before the sunrise 🎤\n"
+            "- And a second line, folks, the crowd hears every word"
+        )
         assert "(laughs)" not in parsed.verse_text
         assert "🎤" not in parsed.verse_text
         assert not parsed.verse_text.startswith("-")
+
+    @pytest.mark.parametrize(
+        "line",
+        [
+            "Six words fit in this line",
+            "These words make this example line far too long for our strict validator today",
+        ],
+    )
+    def test_rejects_lines_outside_seven_to_twelve_words(self, line):
+        with pytest.raises(ProviderInvalidOutputError):
+            parse_verse(f"{line}\nA second line has enough words to pass validation")
+
+    def test_rejects_overlong_line_instead_of_truncating(self):
+        overlong = "extraordinarilylongword " * 7
+        with pytest.raises(ProviderInvalidOutputError, match="overlong"):
+            parse_verse(f"{overlong}\nA second line has enough words to pass validation")
 
     def test_too_few_lines_rejected(self):
         with pytest.raises(ProviderInvalidOutputError):

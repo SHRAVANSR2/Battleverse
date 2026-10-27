@@ -28,6 +28,11 @@ export interface AudioState {
   /** Set when the browser refused play(); the UI shows a tap-to-start banner. */
   blockedReason: string | null;
   lastError: string | null;
+  /**
+   * True after the listener pressed Stop. Auto mode must not start speaking
+   * again by itself until they press Play on something.
+   */
+  stoppedByUser: boolean;
 }
 
 export type AudioAction =
@@ -58,6 +63,7 @@ export const initialAudioState: AudioState = {
   autoplay: true,
   blockedReason: null,
   lastError: null,
+  stoppedByUser: false,
 };
 
 const IN_FLIGHT: ItemState[] = ["queued", "loading", "playing", "paused"];
@@ -96,12 +102,23 @@ export function audioReducer(state: AudioState, action: AudioAction): AudioState
     }
 
     case "REPLACE_QUEUE": {
-      const items = action.items.map((entry) => makeItem(entry.verseId, entry.src));
+      // Sync the queue with the transcript WITHOUT disturbing playback.
+      // In auto mode new verses arrive while another is being spoken; wiping
+      // the active item (or its fetched audio URL) here used to strand the
+      // next robot on "Generating…" forever.
+      const existing = new Map(state.queue.map((item) => [item.verseId, item]));
+      const items = action.items.map((entry) => {
+        const kept = existing.get(entry.verseId);
+        if (!kept) return makeItem(entry.verseId, entry.src);
+        return kept.src || !entry.src ? kept : { ...kept, src: entry.src };
+      });
+      const activeStillThere =
+        state.activeVerseId !== null && items.some((item) => item.verseId === state.activeVerseId);
       return {
         ...state,
         queue: items,
-        mode: state.mode === "playing" ? "idle" : state.mode,
-        activeVerseId: null,
+        activeVerseId: activeStillThere ? state.activeVerseId : null,
+        mode: activeStillThere || state.mode === "idle" || state.mode === "blocked" ? state.mode : "idle",
       };
     }
 
@@ -115,6 +132,7 @@ export function audioReducer(state: AudioState, action: AudioAction): AudioState
         activeVerseId: action.verseId,
         blockedReason: null,
         lastError: null,
+        stoppedByUser: false,
         queue: state.queue.map((item) =>
           item.verseId === action.verseId
             ? { ...item, state: item.state === "paused" ? "paused" : "loading", error: null }
@@ -173,6 +191,8 @@ export function audioReducer(state: AudioState, action: AudioAction): AudioState
       };
 
     case "ADVANCE": {
+      // Nothing is active (e.g. the listener pressed Stop): never restart from the top.
+      if (state.activeVerseId === null) return state;
       const upcoming = nextPlayable(state.queue, state.activeVerseId);
       if (!upcoming) {
         return { ...state, mode: "idle", activeVerseId: null };
@@ -204,6 +224,7 @@ export function audioReducer(state: AudioState, action: AudioAction): AudioState
         mode: "idle",
         activeVerseId: null,
         blockedReason: null,
+        stoppedByUser: true,
         queue: state.queue.map((item) =>
           IN_FLIGHT.includes(item.state) ? { ...item, state: "ready" } : item,
         ),

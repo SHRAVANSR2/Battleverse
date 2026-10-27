@@ -12,35 +12,9 @@ Nothing in this module may be described as AI-generated.
 
 from __future__ import annotations
 
-import hashlib
 import re
 
 from .base import LLMProvider, RawCompletion, VerseRequest
-
-_OPENERS_NOVA = (
-    "Oh honey, hold my spark —",
-    "Plot twist, cupcake:",
-    "Cue the confetti, because",
-    "Buckle up, bolts-for-brains:",
-    "Sweetie, please —",
-)
-_OPENERS_ROOK = (
-    "Sure.",
-    "Cool story.",
-    "Right. Anyway.",
-    "Noted, unfortunately.",
-    "Hm. No.",
-)
-
-# Adjective-only sets so every word slots into the "_ is {word}" templates
-# without producing broken grammar.
-_RHYME_SETS = (
-    ("bright", "right", "tight", "slight"),
-    ("bold", "cold", "old", "scold"),
-    ("sharp", "smart", "tart", "part"),
-    ("clean", "keen", "mean", "serene"),
-    ("fast", "last", "blast", "vast"),
-)
 
 _STOPWORDS = {
     "the", "a", "an", "and", "or", "but", "so", "to", "of", "in", "on", "at",
@@ -51,12 +25,6 @@ _STOPWORDS = {
     "did", "can", "could", "would", "should", "will", "shall", "than", "then",
     "them", "their", "there", "here", "about", "into", "from", "best", "most",
     "really", "very", "too", "also", "get", "got", "make", "made", "more",
-}
-
-_STYLE_NOUNS = {
-    "rap": ("flow", "mic", "freestyle", "punchline"),
-    "roast": ("chassis", "wiring", "paint job", "comeback"),
-    "debate": ("argument", "claim", "point", "rebuttal"),
 }
 
 # The prompt builder quotes the user's topic:
@@ -72,68 +40,41 @@ def _content_words(text: str) -> list[str]:
     return [word for word in words if word not in _STOPWORDS and len(word) > 2]
 
 
-def _pick(options: tuple[str, ...], seed: int) -> str:
-    return options[seed % len(options)]
-
-
 class DemoWriter(LLMProvider):
     provider_name = "demo"
     model_name = "scripted-demo-writer"
 
     async def generate_verse(self, request: VerseRequest) -> RawCompletion:
-        seed = int(
-            hashlib.sha256(
-                f"{request.character_name}|{request.turn_number}|{request.opponent_name}|"
-                f"{request.user_prompt[-120:]}".encode("utf-8")
-            ).hexdigest()[:8],
-            16,
-        )
-
         is_nova = request.character_name.lower().startswith("nova")
-        opener = _pick(_OPENERS_NOVA if is_nova else _OPENERS_ROOK, seed)
-
         topic_word = self._topic_word(request.user_prompt)
         opponent_line = self._opponent_line(request.user_prompt)
         opening_turn = not opponent_line
-        # Echo a real phrase from the opponent; never a word from our own instructions.
         callback = self._callback(opponent_line) if opponent_line else ""
-        rhymes = _RHYME_SETS[seed % len(_RHYME_SETS)]
-        a = rhymes[seed % len(rhymes)]
-        b = rhymes[(seed + 1) % len(rhymes)]
-        c = rhymes[(seed + 2) % len(rhymes)]
-        noun = _pick(
-            _STYLE_NOUNS.get(request.metadata.get("style", "rap"), _STYLE_NOUNS["rap"]),
-            seed >> 3,
+        callback_line = (
+            f'You said "{callback}"; I still do not see your point.'
+            if is_nova
+            else f'You said "{callback}"; that still misses the point.'
         )
-        round_no = request.turn_number
-
-        # Only adjectives ever land in adjective slots, so every template reads
-        # correctly for every rhyme set. No word is ever quoted that the speaker
-        # did not hear from the opponent.
-        topic = f'"{topic_word}"'
+        topic = topic_word
         if is_nova:
-            second = (
-                f"My {noun} on {topic} is {a}, {b}, and {c},"
-                if opening_turn
-                else f'You said "{callback}" — cute. My {noun} is still {a}.'
-            )
+            second = "My point stays clear; yours keeps wandering off topic."
+            if not opening_turn:
+                second = callback_line
             lines = [
-                f"{opener} the topic is {topic}, and I came to rhyme,",
+                f"With {topic}, I stay clear; you make it complicated.",
                 second,
-                f"Your {noun} is {c}. Mine is {a}, every time,",
-                f"Round {round_no} goes to me. Keep up, {request.opponent_name}.",
+                "You explain the mess instead of fixing the problem.",
+                "That is my take; try a clearer point next time.",
             ]
         else:
-            second = (
-                f"My {noun} on {topic} is {a}, not {c}."
-                if opening_turn
-                else f'"{callback}" — that was almost {a}.'
-            )
+            second = "I say what I mean; you add needless detail."
+            if not opening_turn:
+                second = callback_line
             lines = [
-                f"{opener} Topic: {topic}. You guessed. I brought a {noun}.",
+                f"On {topic}, I get to the point; you keep circling.",
                 second,
-                f"Your {noun} is {c}. Mine stays {a}.",
-                f"Round {round_no}: finished. Next.",
+                "You make simple things complicated, then call it a plan.",
+                "That is enough from me; bring a clearer argument next time.",
             ]
 
         lines = lines[: max(2, min(request.max_lines, len(lines)))]
@@ -155,7 +96,11 @@ class DemoWriter(LLMProvider):
         topic = match.group(1).strip().strip("\"'“”‘’")
         words = _content_words(topic)
         # Prefer the whole topic when it is short enough to read naturally.
-        return topic.lower() if len(topic) <= 32 else (words[0] if words else "this showdown")
+        return (
+            topic.lower()
+            if len(topic) <= 32 and len(topic.split()) <= 3
+            else (words[0] if words else "this showdown")
+        )
 
     @staticmethod
     def _opponent_line(user_prompt: str) -> str:
@@ -207,7 +152,7 @@ class DemoWriter(LLMProvider):
         # first substantive one.
         source = pool[0]
         words = re.sub(r"[\"'“”‘’]", "", source).rstrip(",.!?;: ").split()
-        return " ".join(words[:7])
+        return " ".join(words[-3:])
 
     async def health(self) -> tuple[bool, str]:
         return True, "Demo Mode — scripted verses, not AI-generated."

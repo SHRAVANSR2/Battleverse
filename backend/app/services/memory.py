@@ -16,24 +16,28 @@ def record_result_memories(session: Session, battle: Battle) -> None:
     if battle.winner_character_id is None:
         return  # draws are not memorable enough to persist
 
-    winner_name = battle.winner.name if battle.winner else "the winner"
-    loser = (
-        battle.fighter_b if battle.winner_character_id == battle.fighter_a_id else battle.fighter_a
+    # `battle.winner` is a lazy-joined relationship that was loaded BEFORE
+    # winner_character_id got set, so it is still None here — resolve through
+    # the always-loaded fighters instead.
+    winner = (
+        battle.fighter_a
+        if battle.winner_character_id == battle.fighter_a_id
+        else battle.fighter_b
     )
-    loser_name = loser.name
+    loser = battle.fighter_b if winner is battle.fighter_a else battle.fighter_a
 
+    # Deliberately NO topic: old topics leak into every future prompt and the
+    # robots start roasting "Coding at midnight" in an antenna battle.
     for character_id, opponent_id, summary in (
         (
-            battle.winner_character_id,
+            winner.id,
             loser.id,
-            f"Beat {loser_name} in a {battle.round_count}-round {battle.style.value} battle "
-            f'about "{battle.topic}".',
+            f"Beat {loser.name} in a {battle.round_count}-round {battle.style.value} battle.",
         ),
         (
             loser.id,
-            battle.winner_character_id,
-            f"Lost to {winner_name} in a {battle.round_count}-round {battle.style.value} "
-            f'battle about "{battle.topic}".',
+            winner.id,
+            f"Lost to {winner.name} in a {battle.round_count}-round {battle.style.value} battle.",
         ),
     ):
         _upsert(session, character_id, opponent_id, battle.id, summary)
